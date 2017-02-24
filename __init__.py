@@ -290,8 +290,8 @@ class BPFArch(Architecture):
         result = InstructionInfo()
         if valid:
             result.length = 8
-        if instr.opcode in InstructionInfoModders:
-            InstructionInfoModders[instr.opcode](result, instr)
+            if instr.opcode in InstructionInfoModders:
+                InstructionInfoModders[instr.opcode](result, instr)
         return result
     
     def perform_get_instruction_text(self, data, addr):
@@ -317,7 +317,7 @@ class BPFArch(Architecture):
         for i in xrange(num_instr):
             valid, instr = get_instruction(data[i*8:(i+1)*8], addr + i*8)
             if not valid:
-                return 0
+                return None
             if instr.opcode not in InstructionIL or True:
                 print 'Adding il.unimplemented()'
                 il.append(il.unimplemented())
@@ -325,7 +325,7 @@ class BPFArch(Architecture):
                 print 'Adding custom il'
                 il.append(InstructionIL[instr.opcode](il, instr))
         print 'Full IL Decode was successful'
-        print 'IL: %s' % str(il)
+        print 'Len(IL): %s' % len(il)
         return 8
         
         
