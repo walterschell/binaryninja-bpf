@@ -318,7 +318,7 @@ class BPFArch(Architecture):
             valid, instr = get_instruction(data[i*8:(i+1)*8], addr + i*8)
             if not valid:
                 return None
-            if instr.opcode not in InstructionIL or True:
+            if instr.opcode not in InstructionIL:
                 print 'Adding il.unimplemented()'
                 il.append(il.unimplemented())
             else:
@@ -347,6 +347,6 @@ class BPFView(BinaryView):
         return 0
     def init(self):
         self.add_entry_point(0)
-        self.add_function(0)
+        #self.add_function(0)
 BPFArch.register()
 BPFView.register()
