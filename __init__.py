@@ -172,7 +172,7 @@ aluret_src_formatters = {
     BPF_X : lambda instr: 'x',
     }
 def ja_modder(iinfo, instr):
-    offset = instr.addr + 8* (1 + instr.jt)
+    target = 8*instr.k
     iinfo.add_branch(BranchType.BranchAlways, offset)
     
 def jc_modder(iinfo, instr):
@@ -182,8 +182,8 @@ def jc_modder(iinfo, instr):
     iinfo.add_branch(BranchType.FalseBranch, jf_offset)
 
 def ja_formatter(instr):
-    offset = (instr.jt + 1) * 8
-    return '0x%x' % (offset + instr.addr)
+    target = 8 * instr.k 
+    return '0x%x' % (target)
 def jc_formatter(instr):
     jt_offset = instr.addr + 8 *(instr.jt + 1)
     jf_offset = instr.addr + 8 * (instr.jf + 1)
