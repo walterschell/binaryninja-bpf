@@ -310,7 +310,7 @@ class BPFArch(Architecture):
         return (tokens, 8)
     
     def perform_get_instruction_low_level_il(self, data, addr, il):
-        print 'Getting il at %x' % addr
+        print 'Getting il at 0x%x' % addr
         num_instr = len(data) / 8
         num_instr = 1
         print 'Asking to decode %d bytes (%d instructions)' % (len(data), num_instr)
