@@ -1,5 +1,5 @@
 from binaryninja.architecture import Architecture
-from binaryninja.lowlevelil import LowLevelILLabel, LLIL_TEMP
+from binaryninja.lowlevelil import LowLevelILLabel, LLIL_TEMP, LowLevelILInstruction
 from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
 from binaryninja.binaryview import BinaryView
 from binaryninja.types import Symbol
@@ -14,8 +14,8 @@ InstructionIL = {}
 InstructionFormatters = {}
 InstructionInfoModders = {}
 DO_RET_IL = True
-DO_JMP_IL = False
-DO_LD_IL = False
+DO_JMP_IL = True
+DO_LD_IL = True
 
 def get_pkt_data(il, offset, use_index=False, size=4):
     pkt_index = il.const(4, offset)
@@ -137,7 +137,9 @@ def jc_formatter(instr):
 def valid_label(il, target):
     label = il.get_label_for_address(Architecture['BPF'], target)
     if label is not None:
+        print 'label for 0x%x existed' % target
         return label
+    print 'Adding label for 0x%x and trying again' % target
     il.add_label_for_address(Architecture['BPF'], target)
     return valid_label(il, target)
 
@@ -150,6 +152,8 @@ def ja_il(il, instr):
 def jc_il(il, instr, cond):
     t = valid_label(il, instr.jt_target)
     f = valid_label(il, instr.jf_target)
+    print 'jt(0x%x) Label Handle: %s' % (instr.jt_target, t.handle)
+    print 'jf(0x%x) Label Handle: %s' % (instr.jf_target, f.handle)
     return il.if_expr(cond, t, f)
 
 
@@ -168,7 +172,9 @@ def get_ret_llil(src):
             src_il = il.reg(4, 'x')
         if src == BPF_K:
             src_il = il.const(4, instr.k)
-        il.append(il.set_reg(4, 'dummyret', src_il))
+        ret_value_exp = il.set_reg(4, 'dummyret', src_il)
+        print 'Appending: %s' % LowLevelILInstruction(il, ret_value_exp.index)
+        il.append(ret_value_exp)
         return il.ret(il.reg(4, 'dummylr'))
     return ret_llil
 def ret_modder(iinfo, instr):
@@ -386,10 +392,8 @@ class BPFArch(Architecture):
             zero_count = 0
         if zero_count >= 3:
             return None
-        print 'Getting il at 0x%x' % addr
-        #num_instr = len(data) / 8
         num_instr = 1
-        print 'Asking to decode %d bytes (%d instructions)' % (len(data), num_instr)
+        print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
         for i in xrange(num_instr):
             valid, instr = get_instruction(data[i * 8:(i + 1) * 8], addr + i * 8)
             if not valid:
@@ -400,16 +404,15 @@ class BPFArch(Architecture):
                 #il.append(il.unimplemented())
                 il.append(il.undefined())
             else:
-                print 'Adding custom il'
                 il_exp = InstructionIL[instr.opcode](il, instr)
                 if il_exp is not None:
-                    print 'appending: %s' % dir(il_exp)
                     il.append(il_exp)
+                    print 'appended: %s' % LowLevelILInstruction(il,il_exp.index)
+
                 else:
                     print 'Failed to generate il'
 
-        print 'Full IL Decode was successful'
-        print 'Len(IL): %s' % len(il)
+        print 'Full IL Decode was successful len(il): %d' % len(il)
         return 8
 
 
