@@ -80,13 +80,24 @@ ld_source_IL = {
     BPF_LEN : lambda il, instr : il.reg(4, 'len'),
     BPF_MSH : lambda il, instr : get_ip_header_size(il, instr.k)
     }
+def TextToken(txt):
+    return InstructionTextToken(InstructionTextTokenType.TextToken, txt)
+def IntegerToken(num):
+    return InstructionTextToken(InstructionTextTokenType.IntegerToken, '#0x%x' % num, value=num)
+def SeperatorToken(txt = ","):
+    return InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken, txt)
+def RegisterToken(txt):
+    return InstructionTextToken(InstructionTextTokenType.RegisterToken, txt)
+def AddressToken(num):
+    return InstructionTextToken(InstructionTextTokenType.PossibleAddressToken, '0x%x' % num, value=num)
+
 source_formatters = {
-    BPF_ABS : lambda instr: '[0x%x]' % instr.k,
-    BPF_IND : lambda instr: '[0x%x + x]' % instr.k,
-    BPF_MEM : lambda instr: 'M[0x%x' % instr.k,
-    BPF_IMM : lambda instr: '#0x%x' % instr.k,
-    BPF_LEN : lambda instr: 'len',
-    BPF_MSH : lambda instr: '4*([0x%x]&0xf)' % instr.k
+    BPF_ABS : lambda instr: [TextToken('[0x%x]' % instr.k)],
+    BPF_IND : lambda instr: [TextToken('[0x%x + x]' % instr.k)],
+    BPF_MEM : lambda instr: [TextToken('M[0x%x' % instr.k)],
+    BPF_IMM : lambda instr: [IntegerToken(instr.k)],
+    BPF_LEN : lambda instr: [RegisterToken('len')],
+    BPF_MSH : lambda instr: [TextToken('4*([0x%x]&0xf)' % instr.k)]
     }
 dest_tuples = {
     BPF_LD : (4, 'a'),
@@ -142,8 +153,7 @@ BPF_JEQ = 0x10
 BPF_JGT = 0x20
 BPF_JGE = 0x30
 BPF_JSET= 0x40
-BPF_JMP_LOOKUP = {
-    BPF_JA   : 'jmp',
+BPF_JC_LOOKUP = {
     BPF_JEQ  : 'jeq',
     BPF_JGT  : 'jgt',
     BPF_JGE  : 'jge',
@@ -167,56 +177,116 @@ aluret_src_IL = {
     BPF_X : lambda il, instr: il.reg(4, 'x')
 }
 aluret_src_formatters = {
-    BPF_K : lambda instr: '#0x%x' % instr.k,
-    BPF_A : lambda instr: 'a',
-    BPF_X : lambda instr: 'x',
+    BPF_K : lambda instr: [IntegerToken(instr.k)],
+    BPF_A : lambda instr: [RegisterToken('a')],
+    BPF_X : lambda instr: [RegisterToken('x')],
     }
 def ja_modder(iinfo, instr):
-    target = 8*instr.k
-    iinfo.add_branch(BranchType.BranchAlways, offset)
+    iinfo.add_branch(BranchType.BranchAlways, instr.ja_target)
     
 def jc_modder(iinfo, instr):
-    jt_offset = instr.addr + 8 * (1 + instr.jt)
-    jf_offset = instr.addr + 8 *(1 + instr.jf)
-    iinfo.add_branch(BranchType.TrueBranch, jt_offset)
-    iinfo.add_branch(BranchType.FalseBranch, jf_offset)
+    iinfo.add_branch(BranchType.TrueBranch, instr.jt_target)
+    iinfo.add_branch(BranchType.FalseBranch, instr.jf_target)
 
-def ja_formatter(instr):
-    target = 8 * instr.k 
-    return '0x%x' % (target)
+def ja_formatter(instr): 
+    return [AddressToken(instr.ja_target)]
 def jc_formatter(instr):
-    jt_offset = instr.addr + 8 *(instr.jt + 1)
-    jf_offset = instr.addr + 8 * (instr.jf + 1)
-    return '#0x%x, 0x%x, 0x%x' % (instr.k, jt_offset, jf_offset)
+    return [IntegerToken(instr.k), SeperatorToken(), 
+            AddressToken(instr.jt_target), SeperatorToken(),
+            AddressToken(instr.jf_target)]
+
+def valid_label(il, target):
+    label = il.get_label_for_address(Architecture['BPF'], target)
+    if label is not None:
+        return label
+    il.add_label_for_address(Architecture['BPF'], target)
+    return valid_label(il, target)
+def ja_il(il, instr):
+    label = None
+    label = valid_label(il, instr.ja_target)
+    return il.goto(label)
+
+def jc_il(il, instr, cond): 
+    t = valid_label(il, instr.jt_target)
+    f = valid_label(il, instr.jf_target)	
+    return il.if_expr(cond, t, f)
+
 
 def init_alu_ops():
     for alu_op in BPF_ALU_LOOKUP:
         name = BPF_ALU_LOOKUP[alu_op]
         for src in [BPF_K, BPF_X]:
             full_opcode = alu_op | src
-            instructionNames[full_opcode] = name
+            InstructionNames[full_opcode] = name
             InstructionFormatters[full_opcode] = aluret_src_formatters[src]
-            
+ 
+def get_ret_llil(src):
+    def ret_llil(il, instr):
+        if src == BPF_X:
+            src_il = il.reg(4, 'x')
+        if src == BPF_K:
+            src_il = il.const(4, instr.k)
+        il.append(il.set_reg(4, 'dummyret', src))
+        return il.ret(il.reg(4, 'dummylr'))
 def init_ret_ops():
     for ret_src in [BPF_K, BPF_X, BPF_A]:
         full_opcode = BPF_RET | ret_src
         InstructionNames[full_opcode] = 'ret'
         InstructionIL[full_opcode] = lambda il, instr: il.no_ret()
         InstructionFormatters[full_opcode] = aluret_src_formatters[ret_src]
-        
+        InstructionInfoModders[full_opcode] = get_ret_llil(ret_src)
 init_ret_ops()
 
+def get_je_llil(src):
+    def je_llil(il, inst):
+        src_il = aluret_src_IL[src](il, inst)
+        cond = il.compare_equal(4,il.reg(4, 'a'), src_il)
+        return jc_il(il, inst, cond)
+    return je_llil
+
+def get_jgt_llil(src):
+    def jgt_llil(il, inst):
+        src_il = aluret_src_IL[src](il, inst)
+        cond = il.compare_unsigned_greater_than(4,il.reg(4, 'a'), src_il)
+        return jc_il(il, inst, cond)
+    return jgt_llil
+    
+def get_jge_llil(src):
+    def jge_llil(il, inst):
+        src_il = aluret_src_IL[src](il, inst)
+        cond = il.compare_unsigned_greater_equal(4, il.reg(4, 'a'), src_il)
+        return jc_il(il, inst, cond)
+    return jge_llil
+
+def get_jset_llil(src):
+    def jset_llil(il, inst):
+        src_il = aluret_src_IL[src](il, inst)
+        cond = il.compare_not_equal(4, il.const(4, 0), il.and_expr(4, il.reg(4, 'a'),src_il))
+        return jc_il(il, inst, cond)
+    return jset_llil
+BPF_JC_LLIL_GENERATORS = {
+    BPF_JEQ : get_je_llil,
+    BPF_JGT : get_jgt_llil,
+    BPF_JGE : get_jge_llil,
+    BPF_JSET : get_jset_llil
+}            
+    
 def init_jmp_ops():
-    for jmp_op in BPF_JMP_LOOKUP:
-        name = BPF_JMP_LOOKUP[jmp_op]
-        full_opcode = BPF_JMP|jmp_op
-        InstructionNames[full_opcode] = name
-        if jmp_op == BPF_JA:
-            InstructionInfoModders[full_opcode] = ja_modder
-            InstructionFormatters[full_opcode] = ja_formatter
-        else:
+    full_opcode = BPF_JMP|BPF_JA
+    name = 'jmp'
+    InstructionInfoModders[full_opcode] = ja_modder
+    InstructionFormatters[full_opcode] = ja_formatter
+    InstructionIL[full_opcode] = ja_il
+    
+    for jmp_op in BPF_JC_LOOKUP:
+        for src in [BPF_K, BPF_X]:
+            name = BPF_JC_LOOKUP[jmp_op]
+            full_opcode = BPF_JMP|jmp_op|src
+            InstructionNames[full_opcode] = name
             InstructionInfoModders[full_opcode] = jc_modder
             InstructionFormatters[full_opcode] = jc_formatter
+            InstructionIL[full_opcode] = BPF_JC_LLIL_GENERATORS[jmp_op](src)
+            
 init_jmp_ops()
 def get_miscop(opcode):
     return opcode & 0xf8
@@ -228,7 +298,7 @@ BPF_MISC_LOOKUP = {
 }
 
 def empty_formatter(instr):
-    return ""
+    return []
 def init_misc_ops():
     for misc_op in [BPF_TAX, BPF_TXA]:
         name = BPF_MISC_LOOKUP[misc_op]
@@ -246,6 +316,18 @@ class BPFInstruction:
         self.opcode, self.jt, self.jf, self.k = \
             struct.unpack(unpack_str, instruction)
         self.addr = addr
+    def offset2addr(self, offset):
+        return self.addr + 8 * (offset + 1)
+    @property
+    def jt_target(self):
+        return self.offset2addr(self.jt)
+    @property
+    def jf_target(self):
+        return self.offset2addr(self.jf)
+    @property
+    def ja_target(self):
+        return self.offset2addr(self.k)
+    
                 
 def get_instruction(data, addr):
         try:
@@ -254,7 +336,7 @@ def get_instruction(data, addr):
         except:
             return (False, None)
         return (False, None)
-
+zero_count = 0
 class BPFArch(Architecture):
     name = "BPF"
     address_size = 4
@@ -281,8 +363,12 @@ class BPFArch(Architecture):
         "m15" : RegisterInfo("m15", 4),
         "pkt" : RegisterInfo("pkt", 4),
         "len" : RegisterInfo("len", 4),
-        "dummystack" : RegisterInfo("dummystack", 4)
+        "dummystack" : RegisterInfo("dummystack", 4),
+        "dummyret" : RegisterInfo("dummyret", 4),
+        "dummylr" : RegisterInfo("dummylr", 4),
+        
     }
+    #because I _must_ have a stack pointer. (BPF has no stack)
     stack_pointer = "dummystack"
 
     def perform_get_instruction_info(self, data, addr): 
@@ -303,13 +389,21 @@ class BPFArch(Architecture):
         tokens = []
         instr_name = InstructionNames[instr.opcode]
         tokens.append(InstructionTextToken(InstructionTextTokenType.InstructionToken, instr_name))
-        tokens.append(InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken," "))
         formatter = InstructionFormatters[instr.opcode]
-        extra_text = formatter(instr)
-        tokens.append(InstructionTextToken(InstructionTextTokenType.TextToken, extra_text))
+        extra_tokens = formatter(instr)
+        if len(extra_tokens) > 0:
+            tokens += [InstructionTextToken(InstructionTextTokenType.TextToken, " ")] + extra_tokens
         return (tokens, 8)
     
     def perform_get_instruction_low_level_il(self, data, addr, il):
+        global zero_count
+        if addr == 0:
+            zero_count += 1
+        else:
+            zero_count = 0
+        if zero_count >= 3:
+            il.finalize()
+            raise Exception('Infinite loop')
         print 'Getting il at 0x%x' % addr
         num_instr = len(data) / 8
         num_instr = 1
@@ -317,13 +411,20 @@ class BPFArch(Architecture):
         for i in xrange(num_instr):
             valid, instr = get_instruction(data[i*8:(i+1)*8], addr + i*8)
             if not valid:
+                print '*********** Tried an failed **********'
                 return None
             if instr.opcode not in InstructionIL:
                 print 'Adding il.unimplemented()'
                 il.append(il.unimplemented())
             else:
                 print 'Adding custom il'
-                il.append(InstructionIL[instr.opcode](il, instr))
+                il_exp = InstructionIL[instr.opcode](il, instr)
+                if il_exp is not None:
+                    print 'appending: %s' % str(il_exp)
+                    il.append(il_exp)
+                else:
+                    print 'Failed to generate il'
+                    
         print 'Full IL Decode was successful'
         print 'Len(IL): %s' % len(il)
         return 8
