@@ -67,12 +67,12 @@ def AddressToken(num):
 
 
 source_formatters = {
-    BPF_ABS: lambda instr: [TextToken('[0x%x]' % instr.k)],
-    BPF_IND: lambda instr: [TextToken('[0x%x + x]' % instr.k)],
-    BPF_MEM: lambda instr: [TextToken('M[0x%x' % instr.k)],
+    BPF_ABS: lambda instr: [TextToken('['), IntegerToken(instr.k), TextToken(']')],
+    BPF_IND: lambda instr: [TextToken('['), IntegerToken(instr.k), TextToken(' + '), RegisterToken('x'), TextToken(']')],
+    BPF_MEM: lambda instr: [TextToken('M['), IntegerToken(instr.k), TextToken(']')],
     BPF_IMM: lambda instr: [IntegerToken(instr.k)],
     BPF_LEN: lambda instr: [RegisterToken('len')],
-    BPF_MSH: lambda instr: [TextToken('4*([0x%x]&0xf)' % instr.k)]
+    BPF_MSH: lambda instr: [TextToken('4*(['), IntegerToken(instr.k),TextToken(']&0xf)')]
 }
 dest_tuples = {
     BPF_LD: (4, 'a'),
@@ -135,6 +135,7 @@ def jc_formatter(instr):
 
 
 def valid_label(il, target):
+    #il.add_label_for_address(Architecture['BPF'], target)
     label = il.get_label_for_address(Architecture['BPF'], target)
     if label is not None:
         print 'label for 0x%x existed' % target
@@ -260,18 +261,6 @@ def init_jmp_ops():
 init_jmp_ops()
 
 
-def get_miscop(opcode):
-    return opcode & 0xf8
-
-
-BPF_TAX = 0x00
-BPF_TXA = 0x80
-BPF_MISC_LOOKUP = {
-    BPF_TAX: 'tax',
-    BPF_TXA: 'txa'
-}
-
-
 def empty_formatter(instr):
     return []
 
@@ -385,6 +374,7 @@ class BPFArch(Architecture):
         return tokens, 8
 
     def perform_get_instruction_low_level_il(self, data, addr, il):
+        raise NotImplementedError
         global zero_count
         if addr == 0:
             zero_count += 1

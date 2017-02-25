@@ -1,5 +1,5 @@
 def get_bpf_class(opcode):
-    return code & 0x07
+    return opcode & 0x07
 
 BPF_LD = 0x00
 BPF_LDX = 0x01
@@ -42,7 +42,7 @@ load_optree = {
     'ldxb' : (BPF_LDX | BPF_B, [BPF_MSH])
     }
 def get_bpf_op(opcode):
-    return code & 0xf0
+    return opcode & 0xf0
 BPF_ADD = 0x00
 BPF_SUB = 0x10
 BPF_MUL = 0x20
@@ -81,12 +81,22 @@ BPF_JC_LOOKUP = {
 
 #define BPF_SRC(code)	((code) & 0x08)
 def get_bpf_src(opcode):
-    return code & 0x08
+    return opcode & 0x08
 BPF_K = 0x00
 BPF_X = 0x08
 
 def get_bpf_rval(opcode):
     #ret - BPF_K and BPF_X also apply */
-    return code & 0x18
+    return opcode & 0x18
 
 BPF_A = 0x10
+def get_miscop(opcode):
+    return opcode & 0xf8
+
+
+BPF_TAX = 0x00
+BPF_TXA = 0x80
+BPF_MISC_LOOKUP = {
+    BPF_TAX: 'tax',
+    BPF_TXA: 'txa'
+}
