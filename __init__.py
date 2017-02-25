@@ -355,12 +355,14 @@ class BPFArch(Architecture):
             result.length = 8
             if instr.opcode in InstructionInfoModders:
                 InstructionInfoModders[instr.opcode](result, instr)
-        return result
+            return result
+        else:
+            return None
 
     def perform_get_instruction_text(self, data, addr):
         valid, instr = get_instruction(data, addr)
         if not valid:
-            return [], 0
+            return None
         if instr.opcode not in InstructionNames:
             return (
             [InstructionTextToken(InstructionTextTokenType.InstructionToken, "unk opcode 0x%x" % instr.opcode)], 8)
@@ -375,8 +377,6 @@ class BPFArch(Architecture):
 
     def perform_get_instruction_low_level_il(self, data, addr, il):
         print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
-        il.append(il.unimplemented())
-        return 8
         global zero_count
         if addr == 0:
             zero_count += 1
@@ -448,7 +448,7 @@ class XTBPFView(BinaryView):
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
-        self.add_auto_segment(0, size,0, 0, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+        self.add_auto_segment(0, size,0, size, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
     def perform_is_executable(self):
         return True
 
