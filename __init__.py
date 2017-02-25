@@ -374,7 +374,9 @@ class BPFArch(Architecture):
         return tokens, 8
 
     def perform_get_instruction_low_level_il(self, data, addr, il):
-        raise NotImplementedError
+        print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
+        il.append(il.unimplemented())
+        return 8
         global zero_count
         if addr == 0:
             zero_count += 1
@@ -383,7 +385,7 @@ class BPFArch(Architecture):
         if zero_count >= 3:
             return None
         num_instr = 1
-        print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
+
         for i in xrange(num_instr):
             valid, instr = get_instruction(data[i * 8:(i + 1) * 8], addr + i * 8)
             if not valid:
@@ -405,6 +407,65 @@ class BPFArch(Architecture):
         print 'Full IL Decode was successful len(il): %d' % len(il)
         return 8
 
+def view2str(bv):
+    size = len(bv)
+    txt = bv.read(0, size)
+    #print 'returning text of size (%d): ->%s<-' % (size, txt)
+    return txt
+def construct_bpf_prog(txt):
+    top_tokens = txt.rstrip().split(',')
+    try:
+        if (len(top_tokens) <= 1):
+            return False
+        num_tokens = int(top_tokens[0])
+        result = ''
+        result += struct.pack('I', num_tokens)
+        for top_token in top_tokens[1:]:
+            if top_token == '':
+                continue
+            instr_tokens = top_token.split(' ')
+            opcode = int(instr_tokens[0])
+            jt = int(instr_tokens[1])
+            jf = int(instr_tokens[2])
+            k = int(instr_tokens[3])
+            result += struct.pack('HBBI', opcode, jt, jf, k)
+        #print 'Returning string of size %d: ->%s<-' % (len(result), result)
+        return result
+    except:
+        pass
+    return None
+class XTBPFView(BinaryView):
+    name = "XTBPF"
+    long_name = "xt_bpf Prog"
+    @classmethod
+    def is_valid_for_data(cls, data):
+        return construct_bpf_prog(view2str(data)) is not None
+
+    def __init__(self, data):
+        BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
+        self.platform = Architecture['BPF'].standalone_platform
+        virtualdata = construct_bpf_prog(view2str(data))
+        num_instr, = struct.unpack('I', virtualdata[0:4])
+        size = num_instr * 8
+        self.virtualcode = virtualdata[4:]
+        self.add_auto_segment(0, size,0, 0, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+    def perform_is_executable(self):
+        return True
+
+    def perform_get_entry_point(self):
+        return 0
+
+    def init(self):
+        self.add_entry_point(0)
+
+    def perform_get_length(self):
+        return len(self.virtualcode)
+
+    def perform_read(self, addr, length):
+        print 'Asked for %d bytes at 0x%x' % (addr, length)
+        result = self.virtualcode[addr : addr + length]
+        print 'Returning string of size (%d): %s' % (len(result), result)
+        return result
 
 class BPFView(BinaryView):
     name = "BPF"
@@ -432,6 +493,6 @@ class BPFView(BinaryView):
         self.add_entry_point(0)
         # self.add_function(0)
 
-
+XTBPFView.register()
 BPFArch.register()
 BPFView.register()
