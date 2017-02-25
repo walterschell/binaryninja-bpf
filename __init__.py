@@ -378,12 +378,6 @@ class BPFArch(Architecture):
     def perform_get_instruction_low_level_il(self, data, addr, il):
         print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
         global zero_count
-        if addr == 0:
-            zero_count += 1
-        else:
-            zero_count = 0
-        if zero_count >= 3:
-            return None
         num_instr = 1
 
         for i in xrange(num_instr):
@@ -448,7 +442,7 @@ class XTBPFView(BinaryView):
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
-        self.add_auto_segment(0, size,0, size, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+        #self.add_auto_segment(0, size,0, size, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
     def perform_is_executable(self):
         return True
 
@@ -462,9 +456,9 @@ class XTBPFView(BinaryView):
         return len(self.virtualcode)
 
     def perform_read(self, addr, length):
-        print 'Asked for %d bytes at 0x%x' % (addr, length)
+        #print 'Asked for %d bytes at 0x%x' % (addr, length)
         result = self.virtualcode[addr : addr + length]
-        print 'Returning string of size (%d): %s' % (len(result), result)
+        #print 'Returning string of size (%d): %s' % (len(result), result)
         return result
 
 class BPFView(BinaryView):
