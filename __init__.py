@@ -99,10 +99,13 @@ def init_load_ops():
             if DO_LD_IL:
                 InstructionIL[full_opcode] = load_il(size, dest, src)
             InstructionFormatters[full_opcode] = source_formatters[op_mode]
-
-
 init_load_ops()
-
+def init_store_ops():
+    InstructionNames[BPF_ST] = 'st'
+    InstructionNames[BPF_STX] = 'stx'
+    InstructionIL[BPF_ST] = lambda il, instr: il.set_reg(4, 'm%d' % instr.k, il.reg(4, 'a'))
+    InstructionIL[BPF_ST] = lambda il, instr: il.set_reg(4, 'm%d' % instr.k, il.reg(4, 'x'))
+init_store_ops()
 aluret_src_IL = {
     BPF_K: lambda il, instr: il.const(4, instr.k),
     BPF_A: lambda il, instr: il.reg(4, 'a'),
@@ -157,15 +160,69 @@ def jc_il(il, instr, cond):
     print 'jf(0x%x) Label Handle: %s' % (instr.jf_target, f.handle)
     return il.if_expr(cond, t, f)
 
+def get_add_llil(src):
+    def add_llil(il, instr):
+        return il.set_reg(4,'a', il.add(4, il.reg(4, 'a'), src(il, instr)))
+    return add_llil
+
+def get_sub_llil(src):
+    def sub_llil(il, instr):
+        return il.set_reg(4, 'a', il.sub(4, il.reg(4, 'a'), src(il, instr)))
+    return sub_llil
+def get_mul_llil(src):
+    def mul_llil(il, instr):
+        return il.set_reg(4, 'a', il.mult(4, il.reg(4, 'a'), src(il, instr)))
+    return mul_llil
+def get_div_llil(src):
+    def div_llil(il, instr):
+        return il.set_reg(4, 'a', il.div(4, il.reg(4, 'a'), src(il, instr)))
+    return div_llil
+def get_neg_llil(src):
+    def neg_llil(il, instr):
+        return il.set_reg(4, 'a', il.neg(4, il.reg(4, 'a')))
+    return neg_llil
+def get_and_llil(src):
+    def and_llil(il, instr):
+        return il.set_reg(4, 'a', il.and_expr(4, il.reg(4, 'a'), src(il, instr)))
+    return and_llil
+def get_or_llil(src):
+    def or_llil(il, instr):
+        return il.set_reg(4, 'a', il.or_exp(4, il.reg(4, 'a'), src(il, instr)))
+    return or_llil
+def get_lsh_llil(src):
+    def lsh_llil(il, instr):
+        return il.set_reg(4, 'a', il.lsh(4, il.reg(4, 'a'), src(il, instr)))
+    return lsh_llil
+def get_rsh_llil(src):
+    def sub_llil(il, instr):
+        return il.set_reg(4, 'a', il.rsh(4, il.reg(4, 'a'), src(il, instr)))
+    return sub_llil
+
+
+ALU_LLIL = {
+    BPF_ADD : get_add_llil,
+    BPF_SUB:  get_sub_llil,
+    BPF_MUL: get_mul_llil,
+    BPF_DIV: get_div_llil,
+    # BPF_MOD : 'mod',
+    BPF_NEG: get_neg_llil,
+    BPF_AND: get_and_llil,
+    BPF_OR: get_or_llil,
+    # BPF_XOR : 'xor',
+    BPF_LSH: get_lsh_llil,
+    BPF_RSH: get_rsh_llil,
+
+}
 
 def init_alu_ops():
     for alu_op in BPF_ALU_LOOKUP:
         name = BPF_ALU_LOOKUP[alu_op]
         for src in [BPF_K, BPF_X]:
-            full_opcode = alu_op | src
+            full_opcode = BPF_ALU | alu_op | src
             InstructionNames[full_opcode] = name
             InstructionFormatters[full_opcode] = aluret_src_formatters[src]
-
+            InstructionIL[full_opcode] = ALU_LLIL[alu_op](aluret_src_IL[src])
+init_alu_ops()
 
 def get_ret_llil(src):
     def ret_llil(il, instr):
@@ -199,7 +256,6 @@ def get_je_llil(src):
         src_il = aluret_src_IL[src](il, inst)
         cond = il.compare_equal(4, il.reg(4, 'a'), src_il)
         return jc_il(il, inst, cond)
-
     return je_llil
 
 
@@ -264,6 +320,10 @@ init_jmp_ops()
 def empty_formatter(instr):
     return []
 
+BPF_MISC_LLIL = {
+    BPF_TAX : lambda il, instr: il.set_reg(4, 'x', il.reg(4,'a')),
+    BPF_TXA : lambda il, instr: il.set_reg(4, 'a', il.reg(4,'x'))
+}
 
 def init_misc_ops():
     for misc_op in [BPF_TAX, BPF_TXA]:
@@ -271,7 +331,7 @@ def init_misc_ops():
         full_opcode = BPF_MISC | misc_op
         InstructionNames[full_opcode] = name
         InstructionFormatters[full_opcode] = empty_formatter
-
+        InstructionIL[full_opcode] = BPF_MISC_LLIL[misc_op]
 
 init_misc_ops()
 
@@ -364,6 +424,7 @@ class BPFArch(Architecture):
         if not valid:
             return None
         if instr.opcode not in InstructionNames:
+            print 'debug: %s' % instr
             return (
             [InstructionTextToken(InstructionTextTokenType.InstructionToken, "unk opcode 0x%x" % instr.opcode)], 8)
         tokens = []
@@ -442,7 +503,8 @@ class XTBPFView(BinaryView):
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
-        #self.add_auto_segment(0, size,0, size, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+        #self.add_auto_segment(0, size,0, 0, SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+        #self.write(0, self.virtualcode)
     def perform_is_executable(self):
         return True
 
@@ -486,7 +548,8 @@ class BPFView(BinaryView):
     def init(self):
         self.add_entry_point(0)
         # self.add_function(0)
-
+for full_opcode in InstructionNames:
+    print '0x%x : %s' % (full_opcode, InstructionNames[full_opcode])
 XTBPFView.register()
 BPFArch.register()
 BPFView.register()
