@@ -175,11 +175,11 @@ def get_mul_llil(src):
     return mul_llil
 def get_div_llil(src):
     def div_llil(il, instr):
-        return il.set_reg(4, 'a', il.div(4, il.reg(4, 'a'), src(il, instr)))
+        return il.set_reg(4, 'a', il.div_unsigned(4, il.reg(4, 'a'), src(il, instr)))
     return div_llil
 def get_neg_llil(src):
     def neg_llil(il, instr):
-        return il.set_reg(4, 'a', il.neg(4, il.reg(4, 'a')))
+        return il.set_reg(4, 'a', il.not_expr(4, il.reg(4, 'a')))
     return neg_llil
 def get_and_llil(src):
     def and_llil(il, instr):
@@ -191,11 +191,11 @@ def get_or_llil(src):
     return or_llil
 def get_lsh_llil(src):
     def lsh_llil(il, instr):
-        return il.set_reg(4, 'a', il.lsh(4, il.reg(4, 'a'), src(il, instr)))
+        return il.set_reg(4, 'a', il.shift_left(4, il.reg(4, 'a'), src(il, instr)))
     return lsh_llil
 def get_rsh_llil(src):
     def sub_llil(il, instr):
-        return il.set_reg(4, 'a', il.rsh(4, il.reg(4, 'a'), src(il, instr)))
+        return il.set_reg(4, 'a', il.logical_shift_right(4, il.reg(4, 'a'), src(il, instr)))
     return sub_llil
 
 
