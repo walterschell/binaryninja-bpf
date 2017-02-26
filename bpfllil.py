@@ -79,9 +79,9 @@ def valid_label(il, target):
     """
     label = il.get_label_for_address(Architecture['BPF'], target)
     if label is not None:
-        print 'label for 0x%x existed' % target
+        log('label for 0x%x existed' % target)
         return label
-    print 'Adding label for 0x%x and trying again' % target
+    log('Adding label for 0x%x and trying again' % target)
     il.add_label_for_address(Architecture['BPF'], target)
     return valid_label(il, target)
 
@@ -107,8 +107,8 @@ def jc_il(il, instr, cond):
     """
     t = valid_label(il, instr.jt_target)
     f = valid_label(il, instr.jf_target)
-    print 'jt(0x%x) Label Handle: %s' % (instr.jt_target, t.handle)
-    print 'jf(0x%x) Label Handle: %s' % (instr.jf_target, f.handle)
+    log('jt(0x%x) Label Handle: %s' % (instr.jt_target, t.handle))
+    log('jf(0x%x) Label Handle: %s' % (instr.jf_target, f.handle))
     return il.if_expr(cond, t, f)
 
 
@@ -284,7 +284,6 @@ def get_ret_llil(src):
         if src == BPF_K:
             src_il = il.const(4, instr.k)
         ret_value_exp = il.set_reg(4, 'dummyret', src_il)
-        # print 'Appending: %s' % LowLevelILInstruction(il, ret_value_exp.index)
         il.append(ret_value_exp)
         return il.ret(il.reg(4, 'dummylr'))
 

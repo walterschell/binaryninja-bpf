@@ -1,3 +1,9 @@
+PRINT_DEBUG = False
+def log(msg):
+    if PRINT_DEBUG:
+        print msg
+
+
 def get_bpf_class(opcode):
     return opcode & 0x07
 

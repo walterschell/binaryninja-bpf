@@ -357,7 +357,7 @@ class BPFArch(Architecture):
             # is returned for invalid data
             return None
         if instr.opcode not in InstructionNames:
-            print 'debug: %s' % instr
+            log('debug: %s' % instr)
             return (
                 [InstructionTextToken(InstructionTextTokenType.InstructionToken, "unk opcode 0x%x" % instr.opcode)], 8)
         tokens = []
@@ -370,27 +370,27 @@ class BPFArch(Architecture):
         return tokens, 8
 
     def perform_get_instruction_low_level_il(self, data, addr, il):
-        print 'Asking to decode %d bytes at 0x%x' % (len(data), addr)
+        log('Asking to decode %d bytes at 0x%x' % (len(data), addr))
         valid, instr = get_instruction(data[0:8], addr)
         if not valid:
-            print '*********** Tried an failed **********'
+            log('*********** Tried an failed **********')
             # This is _EXCEEDINGLY_ important to return on failure.
             # Things will break in creative ways if anything other than None
             # is returned for invalid data
             return None
         if instr.opcode not in InstructionLLIL:
-            print 'Adding il.undefined()'
+            log('Adding il.undefined()')
             # il.append(il.unimplemented())
             il.append(il.undefined())
         else:
             il_exp = InstructionLLIL[instr.opcode](il, instr)
             if il_exp is not None:
                 il.append(il_exp)
-                print 'appended: %s' % LowLevelILInstruction(il, il_exp.index)
+                log('appended: %s' % LowLevelILInstruction(il, il_exp.index))
             else:
-                print 'Failed to generate il'
+                log('Failed to generate il')
 
-        print 'Full IL Decode was successful len(il): %d' % len(il)
+        log('Full IL Decode was successful len(il): %d' % len(il))
         return 8
 
 
@@ -508,7 +508,7 @@ def init_module():
     init_ret_ops()
     init_misc_ops()
     for full_opcode in InstructionNames:
-        print '0x%x : %s' % (full_opcode, InstructionNames[full_opcode])
+        log('0x%x : %s' % (full_opcode, InstructionNames[full_opcode]))
     XTBPFView.register()
     BPFArch.register()
     BPFView.register()
