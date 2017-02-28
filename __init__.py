@@ -52,6 +52,8 @@ def RegisterToken(txt):
 def AddressToken(num):
     return InstructionTextToken(InstructionTextTokenType.PossibleAddressToken, '0x%x' % num, value=num)
 
+def MemoryTokens(num):
+    return [TextToken('M['), IntegerToken(num), TextToken(']')]
 def empty_formatter(instr):
     return []
 
@@ -59,7 +61,7 @@ ld_source_formatters = {
     BPF_ABS: lambda instr: [TextToken('['), IntegerToken(instr.k), TextToken(']')],
     BPF_IND: lambda instr: [TextToken('['), IntegerToken(instr.k), TextToken(' + '), RegisterToken('x'),
                             TextToken(']')],
-    BPF_MEM: lambda instr: [TextToken('M['), IntegerToken(instr.k), TextToken(']')],
+    BPF_MEM: lambda instr: MemoryTokens(instr.k),
     BPF_IMM: lambda instr: [IntegerToken(instr.k)],
     BPF_LEN: lambda instr: [RegisterToken('len')],
     BPF_MSH: lambda instr: [TextToken('4*(['), IntegerToken(instr.k), TextToken(']&0xf)')]
@@ -154,9 +156,12 @@ def init_store_ops():
     """
     InstructionNames[BPF_ST] = 'st'
     InstructionNames[BPF_STX] = 'stx'
+    #TODO: Fix this
+    InstructionFormatters[BPF_ST] = lambda instr: MemoryTokens(instr.k)
+    InstructionFormatters[BPF_STX] = lambda instr: MemoryTokens(instr.k)
     if DO_STORE_IL:
         InstructionLLIL[BPF_ST] = lambda il, instr: il.set_reg(4, 'm%d' % instr.k, il.reg(4, 'a'))
-        InstructionLLIL[BPF_ST] = lambda il, instr: il.set_reg(4, 'm%d' % instr.k, il.reg(4, 'x'))
+        InstructionLLIL[BPF_STX] = lambda il, instr: il.set_reg(4, 'm%d' % instr.k, il.reg(4, 'x'))
 
 
 def init_alu_ops():

@@ -24,7 +24,7 @@ def get_mem_data(il, addr):
     :param addr: memory addr to retrieve (Max is 15)
     :return: llil expression to access M[addr]
     """
-    return il.reg(4, 'r%d' % addr)
+    return il.reg(4, 'm%d' % addr)
 
 
 def get_ip_header_size(il, offset):
