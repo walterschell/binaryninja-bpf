@@ -1,4 +1,5 @@
 import struct
+import socket
 
 from binaryninja.architecture import Architecture
 from binaryninja.binaryview import BinaryView
@@ -6,6 +7,7 @@ from binaryninja.enums import (BranchType, InstructionTextTokenType,
                                SegmentFlag)
 from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
 from binaryninja.lowlevelil import LowLevelILInstruction
+from binaryninja.plugin import PluginCommand
 from bpfconstants import *
 from bpfllil import *
 
@@ -500,6 +502,19 @@ class BPFView(BinaryView):
     def init(self):
         self.add_entry_point(0)
 
+def hton(txt):
+    return txt[3] + txt[2] + txt[1] + txt[0]
+def get_ip_at(bv, addr):
+    k_raw = hton(bv.read(addr + 4, 4))
+    result = socket.inet_ntoa(k_raw)
+    return result
+
+def annotate_ip_at(bv, addr):
+    funct = function = bv.get_basic_blocks_at(addr)[0].function
+    ip = get_ip_at(bv, addr)
+    funct.set_comment(addr, ip)
+    log('Commenting 0x%x with %s')
+
 def init_module():
     init_load_ops()
     init_store_ops()
@@ -512,5 +527,6 @@ def init_module():
     XTBPFView.register()
     BPFArch.register()
     BPFView.register()
+    PluginCommand.register_for_address('BPF Annotate IP', 'Converts BPF K value to IP', annotate_ip_at)
 
 init_module()
