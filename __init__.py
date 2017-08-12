@@ -1,10 +1,9 @@
 import struct
 import socket
-
 from binaryninja.architecture import Architecture
 from binaryninja.binaryview import BinaryView
 from binaryninja.enums import (BranchType, InstructionTextTokenType,
-                               SegmentFlag)
+                               SegmentFlag, Endianness)
 from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
 from binaryninja.lowlevelil import LowLevelILInstruction
 from binaryninja.plugin import PluginCommand
@@ -301,6 +300,7 @@ class BPFArch(Architecture):
     address_size = 4
     default_int_size = 4
     max_instr_length = 8
+    endianness = Endianness.BigEndian
     regs = {
         "a": RegisterInfo("a", 4),  # accumulator
         "x": RegisterInfo("x", 4),  # index
@@ -450,10 +450,13 @@ class XTBPFView(BinaryView):
     """
     name = "XTBPF"
     long_name = "xt_bpf Prog"
-
+    #endianness = Endianness.BigEndian
     @classmethod
     def is_valid_for_data(cls, data):
-        return construct_bpf_prog(view2str(data)) is not None
+        return False
+        if construct_bpf_prog(view2str(data)) is not None:
+            return True
+        return False
 
     def __init__(self, data):
         BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
@@ -462,6 +465,9 @@ class XTBPFView(BinaryView):
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
+    @property
+    def endianness(self):
+        return Endianness.BigEndian
 
     def perform_is_executable(self):
         return True
@@ -478,6 +484,9 @@ class XTBPFView(BinaryView):
     def perform_read(self, addr, length):
         result = self.virtualcode[addr: addr + length]
         return result
+
+    def perform_get_default_endianness(self):
+        return Endianness.BigEndian
 
 class BPFView(BinaryView):
     """
@@ -496,7 +505,7 @@ class BPFView(BinaryView):
 
     @classmethod
     def is_valid_for_data(cls, data):
-        return True
+        return False
 
     def perform_is_executable(self):
         return True
