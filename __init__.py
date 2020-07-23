@@ -8,8 +8,8 @@ from binaryninja.enums import (BranchType, InstructionTextTokenType,
 from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
 from binaryninja.lowlevelil import LowLevelILInstruction
 from binaryninja.plugin import PluginCommand
-from bpfconstants import *
-from bpfllil import *
+from .bpfconstants import *
+from .bpfllil import *
 
 # Opcode to instruction name mapping
 InstructionNames = {}
@@ -401,7 +401,7 @@ class BPFArch(Architecture):
         return 8
 
 
-def view2str(bv):
+def view2str(bv)->str:
     """
     Buffers all data from a binary view to a string
     :param bv: BinaryView to read from
@@ -409,10 +409,10 @@ def view2str(bv):
     """
     size = len(bv)
     txt = bv.read(0, size)
-    return txt
+    return txt.decode()
 
 
-def construct_bpf_prog(txt):
+def construct_bpf_prog(txt:str):
     """
     Constructs a BPF program from a line of text with the following format
     This is the same format the xt_bpf iptables extension takes as well as the one
@@ -427,7 +427,7 @@ def construct_bpf_prog(txt):
         if len(top_tokens) <= 1:
             return False
         num_tokens = int(top_tokens[0])
-        result = ''
+        result = b''
         result += struct.pack('I', num_tokens)
         for top_token in top_tokens[1:]:
             if top_token == '':
@@ -439,8 +439,8 @@ def construct_bpf_prog(txt):
             k = int(instr_tokens[3])
             result += struct.pack('HBBI', opcode, jt, jf, k)
         return result
-    except:
-        pass
+    except Exception as e:
+        log('Error constructing: {}'.format(e))
     return None
 
 
@@ -457,11 +457,14 @@ class XTBPFView(BinaryView):
 
     def __init__(self, data):
         BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
+
         self.platform = Architecture['BPF'].standalone_platform
         virtualdata = construct_bpf_prog(view2str(data))
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
+        log('init returend')
+
 
     def perform_is_executable(self):
         return True
@@ -471,6 +474,7 @@ class XTBPFView(BinaryView):
 
     def init(self):
         self.add_entry_point(0)
+        return True
 
     def perform_get_length(self):
         return len(self.virtualcode)
@@ -487,6 +491,7 @@ class BPFView(BinaryView):
     long_name = "BPF"
 
     def __init__(self, data):
+        log('Initializing....')
         BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
         self.platform = Architecture['BPF'].standalone_platform
         num_instr, = struct.unpack('I', self.parent_view.read(0, 4))
@@ -506,6 +511,7 @@ class BPFView(BinaryView):
 
     def init(self):
         self.add_entry_point(0)
+        return True
 
 def hton(txt):
     return txt[3] + txt[2] + txt[1] + txt[0]
@@ -527,8 +533,8 @@ def init_module():
     init_jmp_ops()
     init_ret_ops()
     init_misc_ops()
-    for full_opcode in InstructionNames:
-        log('0x%x : %s' % (full_opcode, InstructionNames[full_opcode]))
+    #for full_opcode in InstructionNames:
+    #    log('0x%x : %s' % (full_opcode, InstructionNames[full_opcode]))
     XTBPFView.register()
     BPFArch.register()
     BPFView.register()

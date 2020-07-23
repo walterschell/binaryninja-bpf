@@ -1,5 +1,5 @@
 from binaryninja.architecture import Architecture
-from bpfconstants import *
+from .bpfconstants import *
 
 
 def get_pkt_data(il, offset, use_index=False, size=4):

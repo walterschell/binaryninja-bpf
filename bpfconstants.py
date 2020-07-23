@@ -1,10 +1,10 @@
 PRINT_DEBUG = False
 def log(msg):
     if PRINT_DEBUG:
-        print msg
+        print(msg)
 
 
-def get_bpf_class(opcode):
+def get_bpf_class(opcode:int)->int:
     return opcode & 0x07
 
 
@@ -27,7 +27,7 @@ BPF_CLASS_LOOKUP = {
 }
 
 
-def get_bpf_size(opcode):
+def get_bpf_size(opcode:int)->int:
     return opcode & 0x18
 
 
@@ -36,7 +36,7 @@ BPF_H = 0x08
 BPF_B = 0x10
 
 
-def get_bpf_mode(opcode):
+def get_bpf_mode(opcode:int)->int:
     return opcode & 0xe0
 
 
@@ -98,7 +98,7 @@ BPF_JC_LOOKUP = {
 
 
 # define BPF_SRC(code)	((code) & 0x08)
-def get_bpf_src(opcode):
+def get_bpf_src(opcode:int)->int:
     return opcode & 0x08
 
 
@@ -106,7 +106,7 @@ BPF_K = 0x00
 BPF_X = 0x08
 
 
-def get_bpf_rval(opcode):
+def get_bpf_rval(opcode:int)->int:
     # ret - BPF_K and BPF_X also apply */
     return opcode & 0x18
 
@@ -114,7 +114,7 @@ def get_bpf_rval(opcode):
 BPF_A = 0x10
 
 
-def get_miscop(opcode):
+def get_miscop(opcode:int)->int:
     return opcode & 0xf8
 
 
