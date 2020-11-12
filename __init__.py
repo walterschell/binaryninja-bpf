@@ -4,10 +4,11 @@ import socket
 from binaryninja.architecture import Architecture
 from binaryninja.binaryview import BinaryView
 from binaryninja.enums import (BranchType, InstructionTextTokenType,
-                               SegmentFlag)
+                               SegmentFlag, SectionSemantics)
 from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
 from binaryninja.lowlevelil import LowLevelILInstruction
 from binaryninja.plugin import PluginCommand
+from binaryninja.callingconvention import CallingConvention
 from .bpfconstants import *
 from .bpfllil import *
 
@@ -296,11 +297,17 @@ def get_instruction(data, addr):
     return False, None
 
 
+class DefaultCallingConvention(CallingConvention):
+    name = 'default'
+    int_return_reg = 'dummyret'
+    int_arg_regs = ['pkt', 'len']
+
 class BPFArch(Architecture):
     name = "BPF"
     address_size = 4
     default_int_size = 4
     max_instr_length = 8
+
     regs = {
         "a": RegisterInfo("a", 4),  # accumulator
         "x": RegisterInfo("x", 4),  # index
@@ -409,7 +416,10 @@ def view2str(bv)->str:
     """
     size = len(bv)
     txt = bv.read(0, size)
-    return txt.decode()
+    try:
+        return txt.decode()
+    except:
+        return None
 
 
 def construct_bpf_prog(txt:str):
@@ -422,6 +432,8 @@ def construct_bpf_prog(txt:str):
     :return: binary representation of the line on success
              None on failure
     """
+    if txt is None:
+        return None
     top_tokens = txt.rstrip().split(',')
     try:
         if len(top_tokens) <= 1:
@@ -463,7 +475,9 @@ class XTBPFView(BinaryView):
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
         self.virtualcode = virtualdata[4:]
-        log('init returend')
+        self.add_auto_segment(0, size, 4, size,
+                              SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
+        self.add_auto_section(".psuedo_text", 0, size, SectionSemantics.ReadOnlyCodeSectionSemantics)
 
 
     def perform_is_executable(self):
@@ -474,6 +488,8 @@ class XTBPFView(BinaryView):
 
     def init(self):
         self.add_entry_point(0)
+        entry_f = self.get_function_at(0)
+        entry_f.function_type = 'uint32_t filter_pkt(uint8_t *pkt, uint32_t pkt_len)'
         return True
 
     def perform_get_length(self):
@@ -497,7 +513,8 @@ class BPFView(BinaryView):
         num_instr, = struct.unpack('I', self.parent_view.read(0, 4))
         size = num_instr * 8
         self.add_auto_segment(0, size, 4, size,
-                              SegmentFlag.SegmentReadable | SegmentFlag.SegmentWritable | SegmentFlag.SegmentExecutable)
+                              SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
+        self.add_auto_section(".psuedo_text", 0, size, SectionSemantics.ReadOnlyCodeSectionSemantics)
 
     @classmethod
     def is_valid_for_data(cls, data):
@@ -511,6 +528,8 @@ class BPFView(BinaryView):
 
     def init(self):
         self.add_entry_point(0)
+        entry_f = self.get_function_at(0)
+        entry_f.function_type = 'uint32_t filter_pkt(uint8_t *pkt, uint32_t pkt_len)'
         return True
 
 def hton(txt):
@@ -537,6 +556,9 @@ def init_module():
     #    log('0x%x : %s' % (full_opcode, InstructionNames[full_opcode]))
     XTBPFView.register()
     BPFArch.register()
+    arch = Architecture['BPF']
+    arch.register_calling_convention(DefaultCallingConvention(arch, 'default'))
+    arch.standalone_platform.default_calling_convention = arch.calling_conventions['default']
     BPFView.register()
     PluginCommand.register_for_address('BPF Annotate IP', 'Converts BPF K value to IP', annotate_ip_at)
 
