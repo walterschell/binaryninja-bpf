@@ -1,14 +1,16 @@
 import struct
 import socket
+import os.path
 
 from binaryninja.architecture import Architecture
 from binaryninja.binaryview import BinaryView
 from binaryninja.enums import (BranchType, InstructionTextTokenType,
                                SegmentFlag, SectionSemantics)
-from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken
+from binaryninja.function import RegisterInfo, InstructionInfo, InstructionTextToken, DisassemblyTextLine
 from binaryninja.lowlevelil import LowLevelILInstruction
 from binaryninja.plugin import PluginCommand
 from binaryninja.callingconvention import CallingConvention
+from binaryninja.datarender import DataRenderer
 from .bpfconstants import *
 from .bpfllil import *
 
@@ -456,6 +458,50 @@ def construct_bpf_prog(txt:str):
     return None
 
 
+class BPFViewBase(BinaryView):
+    def __init__(self, data):
+        super().__init__(parent_view=data, file_metadata=data.file)
+        self.platform = Architecture['BPF'].standalone_platform
+
+    @classmethod
+    def is_valid_for_data(cls, data):
+        return True
+
+    def perform_is_executable(self):
+        return True
+
+    def perform_get_entry_point(self):
+        return 0
+
+    def init(self):
+        here, _ = os.path.split(__file__)
+        bpf_types_h = os.path.join(here, "bpf_types.h")
+        types = self.platform.parse_types_from_source_file(bpf_types_h)
+        for typename, typeinstance in types.types.items():
+            print('Registering {} to {}'.format(typename, typeinstance))
+            self.define_type('auto-{}'.format(typename), typename, typeinstance)
+        self.add_entry_point(0)
+        entry_f = self.get_function_at(0)
+        entry_f.function_type = 'uint32_t filter_pkt(struct etherpkt *pkt, uint32_t pkt_len)'
+        return True
+
+class BPFView(BPFViewBase):
+    """
+    Used for an already binary packed representation
+    """
+    name = "BPF"
+    long_name = "BPF"
+
+    def __init__(self, data):
+        log('Initializing....')
+        super().__init__(data=data)
+        num_instr, = struct.unpack('I', self.parent_view.read(0, 4))
+        size = num_instr * 8
+        self.add_auto_segment(0, size, 4, size,
+                              SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
+        self.add_auto_section(".psuedo_text", 0, size, SectionSemantics.ReadOnlyCodeSectionSemantics)
+
+
 class XTBPFView(BinaryView):
     """
     Used for strings of the kind bpftools output
@@ -468,9 +514,7 @@ class XTBPFView(BinaryView):
         return construct_bpf_prog(view2str(data)) is not None
 
     def __init__(self, data):
-        BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
-
-        self.platform = Architecture['BPF'].standalone_platform
+        super().__init__(data=data)
         virtualdata = construct_bpf_prog(view2str(data))
         num_instr, = struct.unpack('I', virtualdata[0:4])
         size = num_instr * 8
@@ -479,19 +523,6 @@ class XTBPFView(BinaryView):
                               SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
         self.add_auto_section(".psuedo_text", 0, size, SectionSemantics.ReadOnlyCodeSectionSemantics)
 
-
-    def perform_is_executable(self):
-        return True
-
-    def perform_get_entry_point(self):
-        return 0
-
-    def init(self):
-        self.add_entry_point(0)
-        entry_f = self.get_function_at(0)
-        entry_f.function_type = 'uint32_t filter_pkt(uint8_t *pkt, uint32_t pkt_len)'
-        return True
-
     def perform_get_length(self):
         return len(self.virtualcode)
 
@@ -499,38 +530,23 @@ class XTBPFView(BinaryView):
         result = self.virtualcode[addr: addr + length]
         return result
 
-class BPFView(BinaryView):
-    """
-    Used for an already binary packed representation
-    """
-    name = "BPF"
-    long_name = "BPF"
 
-    def __init__(self, data):
-        log('Initializing....')
-        BinaryView.__init__(self, parent_view=data, file_metadata=data.file)
-        self.platform = Architecture['BPF'].standalone_platform
-        num_instr, = struct.unpack('I', self.parent_view.read(0, 4))
-        size = num_instr * 8
-        self.add_auto_segment(0, size, 4, size,
-                              SegmentFlag.SegmentReadable | SegmentFlag.SegmentExecutable)
-        self.add_auto_section(".psuedo_text", 0, size, SectionSemantics.ReadOnlyCodeSectionSemantics)
+class EtherTypeRenderer(DataRenderer):
+    def perform_is_valid_for_data(self, ctxt, view, addr, type, context):
+        print('##################3Checking for {}'.format(type))
+        return DataRenderer.is_type_of_struct_name(type, "_ethertype", context)
+    def perform_get_lines_for_data(self, ctxt, view, addr, type, prefix, width, context):
+        value = struct.unpack('!H',view.read(addr, 2))[0]
+        if value == 0x0800:
+            prefix.append(
+                InstructionTextToken(InstructionTextTokenType.TextToken, 'IPv4')
+            )
+        else:
+            prefix.append(
+                InstructionTextToken(InstructionTextTokenType.IntegerToken, value)
+            )
+        return [DisassemblyTextLine(prefix, addr)]
 
-    @classmethod
-    def is_valid_for_data(cls, data):
-        return True
-
-    def perform_is_executable(self):
-        return True
-
-    def perform_get_entry_point(self):
-        return 0
-
-    def init(self):
-        self.add_entry_point(0)
-        entry_f = self.get_function_at(0)
-        entry_f.function_type = 'uint32_t filter_pkt(uint8_t *pkt, uint32_t pkt_len)'
-        return True
 
 def hton(txt):
     return txt[3] + txt[2] + txt[1] + txt[0]
@@ -552,14 +568,20 @@ def init_module():
     init_jmp_ops()
     init_ret_ops()
     init_misc_ops()
+    #EtherTypeRenderer().register_type_specific()
+    EtherTypeRenderer().register_generic()
     #for full_opcode in InstructionNames:
     #    log('0x%x : %s' % (full_opcode, InstructionNames[full_opcode]))
-    XTBPFView.register()
     BPFArch.register()
     arch = Architecture['BPF']
     arch.register_calling_convention(DefaultCallingConvention(arch, 'default'))
     arch.standalone_platform.default_calling_convention = arch.calling_conventions['default']
+
+
+
+    XTBPFView.register()
     BPFView.register()
+
     PluginCommand.register_for_address('BPF Annotate IP', 'Converts BPF K value to IP', annotate_ip_at)
 
 init_module()
